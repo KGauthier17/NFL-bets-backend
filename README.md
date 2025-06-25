@@ -1,1 +1,3 @@
-# NFL-bets-backend
+# NFL Bets Backend
+
+This repository is dedicated to developing the machine learning model for predicting the probability of an NFL player prop bet hitting, based on the player's previous performances. The project also aims to assess whether a given bet offers high value compared to its probability of success. The backend will serve as the foundation for data processing, model training, and value analysis to support smarter NFL player prop betting decisions.
