@@ -10,7 +10,8 @@ setup(
     install_requires=[
         "numpy",
         "pandas",
-        "scikit-learn"
+        "scikit-learn",
+        "fastapi"
     ],
     python_requires=">=3.7",
 )
