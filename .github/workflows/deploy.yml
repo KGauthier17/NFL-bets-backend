@@ -6,28 +6,27 @@ on:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v2
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Build and Push Docker image
+        uses: docker/build-push-action@v2
         with:
-          python-version: '3.13'
+          context: .
+          push: true
+          tags: KGauthier17/nfl-bets-backend:${{ github.sha }}
 
-      - name: Set up AWS CLI
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Deploy to AWS EC2
+        uses: appleboy/ssh-action@master
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-west-2
-
-      - name: Install dependencies
-        run: pip install awsebcli
-
-      - name: Deploy to Elastic Beanstalk
-        run: |
-          eb init nfl-bets-backend --platform docker --region us-west-2
-          eb deploy
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            docker stop nfl-bets-backend || true
+            docker rm nfl-bets-backend || true
+            docker pull KGauthier17/nfl-bets-backend:${{ github.sha }}
+            docker run -d --name nfl-bets-backend -p 80:80 KGauthier17/nfl-bets-backend:${{ github.sha }}
