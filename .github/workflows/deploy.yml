@@ -1,32 +1,26 @@
-name: Deploy to AWS EC2
+name: Deploy to AWS ECS
 
 on:
   push:
     branches: [ main ]
 
 jobs:
-  deploy:
-    runs-on: self-hosted
+  build-and-push:
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
 
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Build and Push Docker image
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          tags: KGauthier17/nfl-bets-backend:${{ github.sha }}
-
-      - name: Deploy to AWS EC2
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            docker stop nfl-bets-backend || true
-            docker rm nfl-bets-backend || true
-            docker pull KGauthier17/nfl-bets-backend:${{ github.sha }}
-            docker run -d --name nfl-bets-backend -p 8080:8080 KGauthier17/nfl-bets-backend:${{ github.sha }}
+          tags: KGauthier17/nfl-bets-backend:latest,KGauthier17/nfl-bets-backend:${{ github.sha }}
