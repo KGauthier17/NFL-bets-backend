@@ -21,12 +21,6 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-west-2
 
-      - name: Download task definition
-        id: download-task-def
-        uses: aws-actions/amazon-ecs-render-task-definition@v1
-        with:
-          task-definition: nfl-bets-backend-task
-
       - name: Force new ECS deployment
         run: |
           aws ecs update-service \
