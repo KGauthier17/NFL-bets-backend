@@ -10,3 +10,7 @@ async def predict():
         content={"message": get_prediction_message()},
         status_code=200
     )
+    
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
