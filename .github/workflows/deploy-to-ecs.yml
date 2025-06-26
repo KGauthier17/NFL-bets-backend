@@ -27,9 +27,10 @@ jobs:
         with:
           task-definition: nfl-bets-backend-task
 
-      - name: Update ECS service
-        uses: aws-actions/amazon-ecs-update-service@v1
-        with:
-          cluster: nfl-bets-backend
-          service: nfl-bets-backend-service
-          task-definition: ${{ steps.download-task-def.outputs.task-definition }}
+      - name: Force new ECS deployment
+        run: |
+          aws ecs update-service \
+            --cluster nfl-bets-backend \
+            --service nfl-bets-backend-service \
+            --force-new-deployment \
+            --region us-west-2
