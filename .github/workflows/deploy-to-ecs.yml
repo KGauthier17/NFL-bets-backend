@@ -24,7 +24,7 @@ jobs:
       - name: Force new ECS deployment
         run: |
           aws ecs update-service \
-            --cluster nfl-bets-backend \
-            --service nfl-bets-backend-service \
+            --cluster backend-nfl-bets-cluster \
+            --service backend-nfl-bets-service \
             --force-new-deployment \
             --region us-west-2
