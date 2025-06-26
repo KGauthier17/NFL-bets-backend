@@ -1,4 +1,4 @@
-name: Deploy to AWS ECS
+name: Build and Push Docker Image
 
 on:
   push:
@@ -23,4 +23,4 @@ jobs:
         with:
           context: .
           push: true
-          tags: kgauthier17/nfl-bets-backend:latest,kgauthier17/nfl-bets-backend:${{ github.sha }}
+          tags: kgauthier17/nfl-bets-backend:latest
