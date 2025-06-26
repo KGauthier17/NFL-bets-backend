@@ -21,10 +21,15 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-west-2
 
-      - name: Update ECS service
-        uses: aws-actions/amazon-ecs-update-service@v2
+      - name: Download task definition
+        id: download-task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
-          cluster: nfl-bets-backend-cluster
-          service: nfl-bets-backend-service
           task-definition: nfl-bets-backend-task
-          force-new-deployment: true
+
+      - name: Update ECS service
+        uses: aws-actions/amazon-ecs-update-service@v1
+        with:
+          cluster: nfl-bets-backend
+          service: nfl-bets-backend-service
+          task-definition: ${{ steps.download-task-def.outputs.task-definition }}
