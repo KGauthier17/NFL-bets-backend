@@ -1,8 +1,10 @@
 venv/
 __pycache__/
 .env
-src/nfl_bets_backend.egg-info/
+*.egg-info/
 # Elastic Beanstalk Files
 .elasticbeanstalk/*
 !.elasticbeanstalk/*.cfg.yml
 !.elasticbeanstalk/*.global.yml
+apiEndpoints.txt
+TODO.txt

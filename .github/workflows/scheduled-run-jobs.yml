@@ -1,0 +1,13 @@
+name: Scheduled Run Jobs
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+
+jobs:
+  call-run-jobs-endpoint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call /run-jobs endpoint
+        run: |
+          curl -X GET https://nfl-bets-backend.onrender.com/run-jobs
