@@ -19,7 +19,7 @@ async def health():
         status_code=200
     )
 
-@app.api_route("/run-jobs", methods=["GET", "HEAD"])
+@app.get("/run-jobs")
 async def run_jobs():
     result = player_stats_collector.get_week_of_season()
     if result is None:
