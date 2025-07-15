@@ -9,7 +9,6 @@ from typing import Dict, List
 from dotenv import load_dotenv
 import datetime
 import time
-import json
 
 load_dotenv()
 
