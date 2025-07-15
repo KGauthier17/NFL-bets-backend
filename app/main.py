@@ -25,7 +25,7 @@ async def run_jobs():
     if result is None:
         return JSONResponse(
             content={"error": "NFL season is not currently active. No data to process."},
-            status_code=500
+            status_code=200
         )
     else:
         year, week = result
