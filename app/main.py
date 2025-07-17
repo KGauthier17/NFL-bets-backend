@@ -1,9 +1,10 @@
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from app.predict import get_prediction_message
-from app.utils import player_stats_collector
+from app.utils import player_stats_and_props_collector as pspc
 
 app = FastAPI()
+data_collector = pspc.PlayerStatsAndPropsCollector()
 
 @app.get("/predict")
 async def predict():
@@ -21,15 +22,15 @@ async def health():
 
 @app.get("/run-jobs")
 async def run_jobs():
-    result = player_stats_collector.get_week_of_season()
-    if result is None:
+    week_info = data_collector.get_week_of_season()
+    if week_info is None:
         return JSONResponse(
             content={"error": "NFL season is not currently active. No data to process."},
             status_code=200
         )
     else:
-        year, week = result
-        player_stats_collector.process_nfl_season_data(year, week)
+        year, week = week_info
+        data_collector.process_nfl_season_data(year, week)
         return JSONResponse(
             content={"status": "jobs are running"},
             status_code=200
