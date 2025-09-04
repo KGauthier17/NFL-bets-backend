@@ -2,7 +2,7 @@ name: Scheduled Run Jobs
 
 on:
   schedule:
-    - cron: '* */4 * * *'
+    - cron: '0 12 * * *'
 
 jobs:
   call-run-jobs-endpoint:
