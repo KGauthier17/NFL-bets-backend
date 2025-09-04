@@ -4,7 +4,7 @@ import os
 from decimal import Decimal
 from botocore.exceptions import ClientError
 import time
-import re
+from rapidfuzz import process, fuzz
 from typing import Dict, List
 from dotenv import load_dotenv
 import datetime
@@ -24,7 +24,7 @@ class PlayerStatsAndPropsCollector:
         self.player_prop_api_key = os.getenv('SPORTSPROPS_API_KEY')
         self.player_data_base_url = "https://api.sportsdata.io/v3/nfl/stats/json/PlayerGameStatsByWeek"
         self.player_prop_base_url = "https://api.the-odds-api.com/v4/sports/americanfootball_nfl/events"
-
+    
     def get_table(self, table_name: str):
         return self.dynamodb.Table(table_name)
 
@@ -71,7 +71,7 @@ class PlayerStatsAndPropsCollector:
             "player_defensive_interceptions",
             "player_pass_attempts", "player_pass_completions", "player_pass_interceptions",
             "player_pass_longest_completion", "player_pass_rush_reception_tds",
-            "player_pass_rush_reception_yds", "player_pass_yds", "player_pass_yds_q1",
+            "player_pass_rush_reception_yds", "player_pass_yds",
             "player_pats", "player_receptions", "player_reception_longest",
             "player_reception_tds", "player_reception_yds"
         ]
@@ -81,7 +81,6 @@ class PlayerStatsAndPropsCollector:
             f"apiKey={self.player_prop_api_key}&regions=us&markets={markets}"
             f"&dateFormat=iso&oddsFormat=american&includeLinks=true&includeSids=true&includeBetLimits=true"
         )
-        print(url)
         try:
             response = requests.get(url, timeout=30)
             response.raise_for_status()
@@ -141,6 +140,55 @@ class PlayerStatsAndPropsCollector:
             else:
                 prop_stats[key] = str(value) if value is not None else ""
         return prop_stats
+        
+    def update_today_player_props(self):
+        def fuzzy_match_player(player_name, popular_players, threshold=85):
+            match, score, _ = process.extractOne(
+                player_name,
+                popular_players,
+                scorer=fuzz.token_sort_ratio
+            )
+            return match if score >= threshold else None
+        event_ids = self.get_event_ids()
+        if event_ids is None or len(event_ids) == 0:
+            print("No event IDs found.")
+            return
+        table = self.dynamodb.Table('nfl_player_props')
+        for event_id in event_ids:
+            props_json = self.get_player_props(event_id)
+            if not props_json or "bookmakers" not in props_json:
+                continue
+            fanduel = next((b for b in props_json["bookmakers"] if b["key"] == "fanduel"), None)
+            if not fanduel:
+                continue
+            player_props = {}
+            for market in fanduel.get("markets", []):
+                market_key = market.get("key")
+                popular_players_list = list(self.popular_offensive_players_set)
+                for outcome in market.get("outcomes", []):
+                    player_name_raw = outcome.get("description", "").lower()
+                    matched_name = fuzzy_match_player(player_name_raw, popular_players_list)
+                    if matched_name:
+                        prop_data = {
+                            "market_key": market_key,
+                            "prop_name": outcome.get("name"),
+                            "price": Decimal(str(outcome.get("price"))) if isinstance(outcome.get("price"), float) else outcome.get("price"),
+                            "point": Decimal(str(outcome.get("point"))) if isinstance(outcome.get("point"), float) else outcome.get("point"),
+                            "last_update": market.get("last_update"),
+                            "date": datetime.datetime.now().isoformat(),
+                        }
+                        if matched_name not in player_props:
+                            player_props[matched_name] = []
+                        player_props[matched_name].append(prop_data)
+            for player_name, props_list in player_props.items():
+                prop_item = {
+                    "player_name": player_name,
+                    "event_id": event_id,
+                    "markets": props_list,
+                    "date": datetime.datetime.now().isoformat(),
+                }
+                table.put_item(Item=prop_item)
+            time.sleep(0.5)
 
     def process_nfl_season_data(self, year: int = 2025, week: int = 1):
         total_players_processed = 0
@@ -178,31 +226,9 @@ class PlayerStatsAndPropsCollector:
         total_players_filtered += filtered_players
         time.sleep(1)
 
-    def get_player_season_data(self, player_name: str, player_id: str, year: int) -> List[Dict]:
-        def sanitize_player_name(name: str) -> str:
-            if not name:
-                return "unknown_player"
-            sanitized = name.lower().replace(' ', '_')
-            sanitized = re.sub(r'[^a-z0-9_\-.]', '', sanitized)
-            sanitized = sanitized.strip('_')
-            if not sanitized:
-                sanitized = "player"
-            return sanitized
-        sanitized_name = sanitize_player_name(player_name)
-        table_name = f"{sanitized_name}_{player_id}"
-        try:
-            table = self.dynamodb.Table(table_name)
-            response = table.scan(
-                FilterExpression=boto3.dynamodb.conditions.Attr('year').eq(year)
-            )
-            return response.get('Items', [])
-        except ClientError as e:
-            print(f"Error retrieving data for {player_name} (ID: {player_id}): {e}")
-            return []
-
     @staticmethod
     def get_week_of_season():
-        season_start = datetime.datetime(2025, 9, 5, 0, 0, 0, tzinfo=datetime.timezone.utc)
+        season_start = datetime.datetime(2025, 9, 3, 0, 0, 0, tzinfo=datetime.timezone.utc)
         now = datetime.datetime.now(datetime.timezone.utc)
         if now < season_start:
             return None

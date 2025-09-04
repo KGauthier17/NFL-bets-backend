@@ -1,8 +1,8 @@
 fastapi
 uvicorn
-numpy
-pandas
-scikit-learn
 boto3
 requests
-dotenv
+python-dotenv
+rapidfuzz
+openai
+scipy

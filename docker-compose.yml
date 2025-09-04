@@ -2,6 +2,8 @@ version: "3.9"
 
 services:
   nfl-bets-backend:
+    env_file:
+      - .env
     build: .
     ports:
       - "80:80"

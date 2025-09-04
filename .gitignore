@@ -8,3 +8,4 @@ __pycache__/
 !.elasticbeanstalk/*.global.yml
 apiEndpoints.txt
 TODO.txt
+.idea/
