@@ -4,5 +4,5 @@ boto3
 requests
 python-dotenv
 rapidfuzz
-openai
 scipy
+numpy
