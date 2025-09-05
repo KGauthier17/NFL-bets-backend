@@ -1,4 +1,5 @@
-from fastapi import FastAPI, HTTPException
+import os
+from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from app.services import player_stats_and_props_collector as pspc
@@ -8,21 +9,31 @@ from typing import Optional
 
 app = FastAPI()
 
+frontend_urls = os.getenv("FRONTEND_URL")
+cors_origins = [url.strip() for url in frontend_urls.split(",") if url.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "https://nfl-bets-frontend.onrender.com"
-    ],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# API Key validation
+def verify_api_key(x_api_key: str = Header()):
+    """Verify the API key from request headers"""
+    expected_api_key = os.getenv("BACKEND_API_KEY")
+    if not expected_api_key:
+        raise HTTPException(status_code=500, detail="API key not configured")
+    if x_api_key != expected_api_key:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    return x_api_key
+
 @app.get("/health")
 async def health():
     try:
-        # Simple health check without initializing heavy services
+        # Health check doesn't require authentication
         return JSONResponse(
             content={"status": "ok", "message": "Service is running"},
             status_code=200
@@ -34,7 +45,7 @@ async def health():
         )
 
 @app.get("/run-jobs")
-async def run_jobs():
+async def run_jobs(api_key: str = Depends(verify_api_key)):
     try:
         data_collector = pspc.PlayerStatsAndPropsCollector()
         calculator = RollingStatsCalculator()
@@ -62,7 +73,7 @@ async def run_jobs():
         )
         
 @app.get("/predict")
-async def predict():
+async def predict(api_key: str = Depends(verify_api_key)):
     """Generate probabilities for all players with props today"""
     try:
         prob_calculator = ProbabilityCalculator()

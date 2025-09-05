@@ -116,7 +116,7 @@ class ProbabilityCalculator:
             return None
 
     def get_todays_player_props(self) -> List[Dict]:
-        """Get all player props for today"""
+        """Get player props for today, or fallback to most recent props if none available"""
         table = self.dynamodb.Table('nfl_player_props')
         today = datetime.datetime.now().date().isoformat()
         
@@ -124,22 +124,46 @@ class ProbabilityCalculator:
             response = table.scan()
             items = response.get('Items', [])
             
-            # Filter for today's props
+            # Handle pagination to get all items
+            while 'LastEvaluatedKey' in response:
+                response = table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
+                items.extend(response.get('Items', []))
+            
+            # First, try to find props for today
             todays_props = []
             for item in items:
                 prop_date = item.get('date', '')
                 if prop_date.startswith(today):
                     todays_props.append(item)
             
-            # Handle pagination if needed
-            while 'LastEvaluatedKey' in response:
-                response = table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
-                for item in response.get('Items', []):
-                    prop_date = item.get('date', '')
-                    if prop_date.startswith(today):
-                        todays_props.append(item)
+            if todays_props:
+                print(f"Found {len(todays_props)} props for today ({today})")
+                return todays_props
             
-            return todays_props
+            # If no props for today, get the most recent props
+            print(f"No props found for today ({today}), looking for most recent props...")
+            
+            # Group items by date and find the most recent date
+            props_by_date = {}
+            for item in items:
+                prop_date = item.get('date', '')
+                if prop_date:  # Only consider items with valid dates
+                    date_key = prop_date.split('T')[0]  # Extract date part (YYYY-MM-DD)
+                    if date_key not in props_by_date:
+                        props_by_date[date_key] = []
+                    props_by_date[date_key].append(item)
+            
+            if not props_by_date:
+                print("No props found in database")
+                return []
+            
+            # Find the most recent date
+            most_recent_date = max(props_by_date.keys())
+            most_recent_props = props_by_date[most_recent_date]
+            
+            print(f"Using most recent props from {most_recent_date} ({len(most_recent_props)} props)")
+            return most_recent_props
+            
         except ClientError as e:
             print(f"Error scanning player props: {e}")
             return []
@@ -196,21 +220,10 @@ class ProbabilityCalculator:
         rushing_tds_mean = float(rolling_stats.get('rushing_touchdowns_weighted_mean', 0))
         receiving_tds_mean = float(rolling_stats.get('receiving_touchdowns_weighted_mean', 0))
         
-        # For position-specific logic
-        position = rolling_stats.get('position', '')
-        
-        if position in ['QB']:
-            # QBs rarely have receiving TDs, focus on rushing + passing
-            passing_tds_mean = float(rolling_stats.get('passing_touchdowns_weighted_mean', 0))
-            total_td_mean = rushing_tds_mean + passing_tds_mean
-        elif position in ['RB', 'WR', 'TE']:
-            # Skill players: rushing + receiving TDs
-            total_td_mean = rushing_tds_mean + receiving_tds_mean
-        else:
-            # Default: all types
-            passing_tds_mean = float(rolling_stats.get('passing_touchdowns_weighted_mean', 0))
-            total_td_mean = rushing_tds_mean + receiving_tds_mean + passing_tds_mean
-        
+        # For ALL positions (including QBs), only count touchdowns they score themselves
+        # This is rushing TDs + receiving TDs (NOT passing TDs)
+        total_td_mean = rushing_tds_mean + receiving_tds_mean
+    
         # Get sample sizes for weighting
         rushing_sample = int(rolling_stats.get('rushing_touchdowns_sample_size', 0))
         receiving_sample = int(rolling_stats.get('receiving_touchdowns_sample_size', 0))
@@ -342,11 +355,15 @@ class ProbabilityCalculator:
         return "negative_binomial" if sample_size >= 10 else "averaged"
     
     def get_all_todays_probabilities(self) -> Dict:
-        """Get probabilities for all players with props today"""
+        """Get probabilities for all players with props today, or most recent props if none today"""
         todays_props = self.get_todays_player_props()
         probabilities = {}
         
-        print(f"Found {len(todays_props)} prop items for today")
+        if not todays_props:
+            print("No props available in database")
+            return probabilities
+        
+        print(f"Processing {len(todays_props)} prop items")
         
         for prop_item in todays_props:
             player_name = prop_item.get('player_name', '')
@@ -434,7 +451,7 @@ class ProbabilityCalculator:
             
             if player_probs:
                 probabilities[player_name] = player_probs
-        
+    
         return probabilities
     
     def calculate_prop_probabilities(self, player_id: str, stat_type: str, prop_line: float) -> Dict:
@@ -495,21 +512,10 @@ class ProbabilityCalculator:
         rushing_tds_mean = float(rolling_stats.get('rushing_touchdowns_weighted_mean', 0))
         receiving_tds_mean = float(rolling_stats.get('receiving_touchdowns_weighted_mean', 0))
         
-        # For position-specific logic
-        position = rolling_stats.get('position', '')
-        
-        if position in ['QB']:
-            # QBs rarely have receiving TDs, focus on rushing + passing
-            passing_tds_mean = float(rolling_stats.get('passing_touchdowns_weighted_mean', 0))
-            total_td_mean = rushing_tds_mean + passing_tds_mean
-        elif position in ['RB', 'WR', 'TE']:
-            # Skill players: rushing + receiving TDs
-            total_td_mean = rushing_tds_mean + receiving_tds_mean
-        else:
-            # Default: all types
-            passing_tds_mean = float(rolling_stats.get('passing_touchdowns_weighted_mean', 0))
-            total_td_mean = rushing_tds_mean + receiving_tds_mean + passing_tds_mean
-        
+        # For ALL positions (including QBs), only count touchdowns they score themselves
+        # This is rushing TDs + receiving TDs (NOT passing TDs)
+        total_td_mean = rushing_tds_mean + receiving_tds_mean
+    
         # Get sample sizes
         rushing_sample = int(rolling_stats.get('rushing_touchdowns_sample_size', 0))
         receiving_sample = int(rolling_stats.get('receiving_touchdowns_sample_size', 0))
