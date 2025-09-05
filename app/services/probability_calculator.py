@@ -25,8 +25,6 @@ class ProbabilityCalculator:
             'player_pass_tds': 'passing_touchdowns',
             'player_pass_attempts': 'passing_attempts',
             'player_pass_completions': 'passing_completions',
-            'player_pass_interceptions': 'passing_interceptions',
-            'player_pass_longest_completion': None,  # We don't track this
             'player_reception_yds': 'receiving_yards',
             'player_reception_tds': 'receiving_touchdowns',
             'player_receptions': 'receptions',
@@ -288,7 +286,7 @@ class ProbabilityCalculator:
         
         # Define stat categories and their typical characteristics
         count_stats = ['rushing_attempts', 'passing_attempts', 'passing_completions', 'receptions', 'targets']
-        discrete_bounded_stats = ['passing_touchdowns', 'rushing_touchdowns', 'receiving_touchdowns', 'passing_interceptions']
+        discrete_bounded_stats = ['passing_touchdowns', 'rushing_touchdowns', 'receiving_touchdowns']
         continuous_stats = ['passing_yards', 'rushing_yards', 'receiving_yards', 'rushing_long', 'receiving_long']
         
         # Distribution selection logic
@@ -426,15 +424,12 @@ class ProbabilityCalculator:
                 elif market_key == 'player_rush_reception_tds':
                     # This is the same as combined touchdowns for non-QBs
                     prob_result = self.calculate_combined_touchdowns_probabilities(player_id, point)
-                elif market_key == 'player_pass_longest_completion':
-                    # We don't track longest completions, skip
-                    print(f"Skipping {market_key} - stat not tracked in our database")
-                    continue
                 else:
                     # Regular single stats
                     stat_type = self.prop_to_stat_mapping.get(market_key)
                     if not stat_type:
                         print(f"No mapping found for market key: {market_key}")
+                        continue
                         continue
                     
                     prob_result = self.calculate_prop_probabilities(player_id, stat_type, point)

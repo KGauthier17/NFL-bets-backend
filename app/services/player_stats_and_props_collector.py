@@ -68,8 +68,8 @@ class PlayerStatsAndPropsCollector:
         player_prop_keys = [
             "player_anytime_td", "player_rush_yds", "player_rush_reception_yds", 
             "player_rush_longest", "player_rush_attempts", "player_pass_tds", 
-            "player_pass_attempts", "player_pass_completions", "player_pass_interceptions",
-            "player_pass_longest_completion", "player_pass_rush_reception_yds", 
+            "player_pass_attempts", "player_pass_completions",
+            "player_pass_rush_reception_yds", 
             "player_pass_yds", "player_receptions", "player_reception_longest", 
             "player_reception_yds"
         ]
@@ -161,9 +161,9 @@ class PlayerStatsAndPropsCollector:
         """Update today's player props - one API call per game"""
         
         # Check if we already processed today's props
-        if self.props_already_exist_for_today():
-            print("✅ Props already exist for today, skipping API calls")
-            return
+        # if self.props_already_exist_for_today():
+        #     print("✅ Props already exist for today, skipping API calls")
+        #     return
         
         def fuzzy_match_player(player_name, popular_players, threshold=85):
             match, score, _ = process.extractOne(
