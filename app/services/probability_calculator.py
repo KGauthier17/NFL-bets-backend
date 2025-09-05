@@ -183,12 +183,17 @@ class ProbabilityCalculator:
         if lambda_param <= 0:
             return 0.0
         
+        # For discrete distributions with fractional prop lines (like 3.5)
+        # Over 3.5 means >= 4, Under 3.5 means <= 3
+        
         if over:
-            # P(X > prop_line) = 1 - P(X <= prop_line)
-            return 1 - stats.poisson.cdf(int(prop_line), lambda_param)
+            # P(X > prop_line) = P(X >= ceiling(prop_line))
+            threshold = int(prop_line) + (1 if prop_line != int(prop_line) else 0)
+            return 1 - stats.poisson.cdf(threshold - 1, lambda_param)
         else:
-            # P(X < prop_line) = P(X <= prop_line - 1)
-            return stats.poisson.cdf(int(prop_line - 1), lambda_param) if prop_line > 0 else 0
+            # P(X < prop_line) = P(X <= floor(prop_line))
+            threshold = int(prop_line)
+            return stats.poisson.cdf(threshold, lambda_param)
     
     def calculate_negative_binomial_probability(self, mean: float, variance: float, prop_line: float, over: bool = True) -> float:
         """Calculate probability using negative binomial distribution"""
@@ -202,10 +207,15 @@ class ProbabilityCalculator:
         if r <= 0 or p <= 0 or p >= 1:
             return self.calculate_poisson_probability(mean, prop_line, over)
         
+        # For discrete distributions with fractional prop lines
         if over:
-            return 1 - stats.nbinom.cdf(int(prop_line), r, p)
+            # P(X > prop_line) = P(X >= ceiling(prop_line))
+            threshold = int(prop_line) + (1 if prop_line != int(prop_line) else 0)
+            return 1 - stats.nbinom.cdf(threshold - 1, r, p)
         else:
-            return stats.nbinom.cdf(int(prop_line - 1), r, p) if prop_line > 0 else 0
+            # P(X < prop_line) = P(X <= floor(prop_line))
+            threshold = int(prop_line)
+            return stats.nbinom.cdf(threshold, r, p)
 
     def calculate_combined_touchdowns_probabilities(self, player_id: str, prop_line: float) -> Dict:
         """Calculate probabilities for total touchdowns (rushing + receiving)"""
