@@ -64,22 +64,20 @@ class PlayerStatsAndPropsCollector:
             return []
 
     def get_player_props(self, event_id: str):
+        """Get player props for a specific event with streamlined markets"""
         player_prop_keys = [
-            "player_last_td", "player_anytime_td", "player_1st_td", "player_tds_over", "player_rush_yds",
-            "player_rush_tds", "player_rush_reception_yds", "player_rush_reception_tds",
-            "player_rush_longest", "player_rush_attempts", "player_pass_tds", "player_assists",
-            "player_defensive_interceptions",
+            "player_anytime_td", "player_rush_yds", "player_rush_reception_yds", 
+            "player_rush_longest", "player_rush_attempts", "player_pass_tds", 
             "player_pass_attempts", "player_pass_completions", "player_pass_interceptions",
-            "player_pass_longest_completion", "player_pass_rush_reception_tds",
-            "player_pass_rush_reception_yds", "player_pass_yds",
-            "player_pats", "player_receptions", "player_reception_longest",
-            "player_reception_tds", "player_reception_yds"
+            "player_pass_longest_completion", "player_pass_rush_reception_yds", 
+            "player_pass_yds", "player_receptions", "player_reception_longest", 
+            "player_reception_yds"
         ]
         markets = "%2C".join(player_prop_keys)
         url = (
             f"{self.player_prop_base_url}/{event_id}/odds?"
             f"apiKey={self.player_prop_api_key}&regions=us&markets={markets}"
-            f"&dateFormat=iso&oddsFormat=american&includeLinks=true&includeSids=true&includeBetLimits=true"
+            f"&dateFormat=iso&oddsFormat=decimal"
         )
         try:
             response = requests.get(url, timeout=30)
@@ -141,7 +139,32 @@ class PlayerStatsAndPropsCollector:
                 prop_stats[key] = str(value) if value is not None else ""
         return prop_stats
         
+    def props_already_exist_for_today(self) -> bool:
+        """Check if we already have props data for today"""
+        table = self.dynamodb.Table('nfl_player_props')
+        today = datetime.datetime.now().date().isoformat()
+        
+        try:
+            # Check if any props exist with today's date
+            response = table.scan(
+                FilterExpression="begins_with(#d, :today)",
+                ExpressionAttributeNames={"#d": "date"},
+                ExpressionAttributeValues={":today": today},
+                Limit=1  # We only need to know if ANY exist
+            )
+            return len(response.get('Items', [])) > 0
+        except ClientError as e:
+            print(f"Error checking existing props: {e}")
+            return False
+
     def update_today_player_props(self):
+        """Update today's player props - one API call per game"""
+        
+        # Check if we already processed today's props
+        if self.props_already_exist_for_today():
+            print("✅ Props already exist for today, skipping API calls")
+            return
+        
         def fuzzy_match_player(player_name, popular_players, threshold=85):
             match, score, _ = process.extractOne(
                 player_name,
@@ -162,9 +185,13 @@ class PlayerStatsAndPropsCollector:
             if not fanduel:
                 continue
             player_props = {}
+            popular_players_list = list(self.popular_offensive_players_set)
+            
+            print(f"Processing {len(fanduel.get('markets', []))} markets for event {event_id}")
+            
             for market in fanduel.get("markets", []):
                 market_key = market.get("key")
-                popular_players_list = list(self.popular_offensive_players_set)
+                
                 for outcome in market.get("outcomes", []):
                     player_name_raw = outcome.get("description", "").lower()
                     matched_name = fuzzy_match_player(player_name_raw, popular_players_list)
