@@ -181,7 +181,11 @@ class ProbabilityCalculator:
     def calculate_poisson_probability(self, lambda_param: float, prop_line: float, over: bool = True) -> float:
         """Calculate probability using Poisson distribution"""
         if lambda_param <= 0:
-            return 0.0
+            # For zero rate (never happens), return appropriate probabilities
+            if over:
+                return 0.0  # P(X > anything) = 0 when lambda = 0
+            else:
+                return 1.0  # P(X <= anything) = 1 when lambda = 0
         
         # For discrete distributions with fractional prop lines (like 3.5)
         # Over 3.5 means >= 4, Under 3.5 means <= 3
@@ -527,9 +531,15 @@ class ProbabilityCalculator:
         sample_size = max(rushing_sample, receiving_sample)
         
         # For anytime TD, we want P(X >= 1) = 1 - P(X = 0)
-        # Using Poisson: P(X = 0) = e^(-λ)
-        prob_no_td = self.calculate_poisson_probability(total_td_mean, 0.5, False)  # P(X < 1) = P(X = 0)
-        prob_any_td = 1 - prob_no_td
+        if total_td_mean <= 0:
+            # If player has never scored, probability is very low but not 0
+            # Use a small baseline probability (e.g., 5% chance they could score)
+            prob_any_td = 0.05
+            prob_no_td = 0.95
+        else:
+            # Using Poisson: P(X = 0) = e^(-λ)
+            prob_no_td = self.calculate_poisson_probability(total_td_mean, 0.5, False)  # P(X < 1) = P(X = 0)
+            prob_any_td = 1 - prob_no_td
         
         return {
             'yes_probability': round(prob_any_td, 4),

@@ -30,8 +30,6 @@ def run_daily_jobs():
         today = date.today()
         print(f"🎯 Checking if player props need updating for {today}...")
         
-        # Only update if we haven't already today
-        # You might want to add a check in your collector to see if today's props exist
         data_collector.update_today_player_props()
         
         # Update rolling stats (this should be efficient and not call external APIs)

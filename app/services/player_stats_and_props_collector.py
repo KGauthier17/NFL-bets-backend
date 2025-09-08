@@ -21,7 +21,13 @@ class PlayerStatsAndPropsCollector:
         self.dynamodb = boto3.resource('dynamodb', region_name=self.aws_region)
         self.popular_offensive_players_set = load_popular_players()
         self.player_data_api_key = os.getenv('SPORTSDATA_API_KEY')
-        self.player_prop_api_key = os.getenv('SPORTSPROPS_API_KEY')
+        
+        api_keys_str = os.getenv('SPORTSPROPS_API_KEY', '')
+        self.player_prop_api_keys = [key.strip() for key in api_keys_str.split(',') if key.strip()]
+        
+        if not self.player_prop_api_keys:
+            raise ValueError("No SPORTSPROPS_API_KEY found in environment variables")
+                
         self.player_data_base_url = "https://api.sportsdata.io/v3/nfl/stats/json/PlayerGameStatsByWeek"
         self.player_prop_base_url = "https://api.the-odds-api.com/v4/sports/americanfootball_nfl/events"
     
@@ -32,6 +38,39 @@ class PlayerStatsAndPropsCollector:
         table = self.get_table(table_name)
         with table.batch_writer() as batch:
             batch.put_item(Item=item)
+
+    def make_api_request_with_failover(self, url_template: str, timeout: int = 30) -> dict:
+        """
+        Make API request with automatic failover to next API key if rate limited
+        url_template should contain {api_key} placeholder
+        """
+        last_error = None
+        
+        for i, api_key in enumerate(self.player_prop_api_keys):
+            try:
+                url = url_template.format(api_key=api_key)
+                
+                response = requests.get(url, timeout=timeout)
+                
+                if response.status_code == 429:
+                    print(f"⚠️ Rate limited on API key #{i+1}, trying next key...")
+                    last_error = f"Rate limited (429) on key #{i+1}"
+                    continue
+                elif response.status_code == 402:
+                    last_error = f"Quota exceeded (402) on key #{i+1}"
+                    continue
+                elif response.status_code >= 400:
+                    last_error = f"HTTP {response.status_code} on key #{i+1}"
+                    continue
+                
+                response.raise_for_status()
+                return response.json()
+                
+            except requests.exceptions.RequestException as e:
+                last_error = str(e)
+                continue
+        
+        raise Exception(f"All API keys exhausted. Last error: {last_error}")
 
     def get_player_stats(self, year: int, week: int) -> List[Dict]:
         url = f"{self.player_data_base_url}/{year}/{week}?key={self.player_data_api_key}"
@@ -64,7 +103,7 @@ class PlayerStatsAndPropsCollector:
             return []
 
     def get_player_props(self, event_id: str):
-        """Get player props for a specific event with streamlined markets"""
+        """Get player props for a specific event with automatic API key failover"""
         player_prop_keys = [
             "player_anytime_td", "player_rush_yds", "player_rush_reception_yds", 
             "player_rush_longest", "player_rush_attempts", "player_pass_tds", 
@@ -74,17 +113,17 @@ class PlayerStatsAndPropsCollector:
             "player_reception_yds"
         ]
         markets = "%2C".join(player_prop_keys)
-        url = (
+        
+        url_template = (
             f"{self.player_prop_base_url}/{event_id}/odds?"
-            f"apiKey={self.player_prop_api_key}&regions=us&markets={markets}"
+            f"apiKey={{api_key}}&regions=us&markets={markets}"
             f"&dateFormat=iso&oddsFormat=decimal"
         )
+        
         try:
-            response = requests.get(url, timeout=30)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            print(f"Error fetching player props for Event {event_id}: {e}")
+            return self.make_api_request_with_failover(url_template)
+        except Exception as e:
+            print(f"❌ All API keys failed for event {event_id}: {e}")
             return []
 
     def should_store_player(self, player_data: Dict) -> bool:
@@ -150,7 +189,7 @@ class PlayerStatsAndPropsCollector:
                 FilterExpression="begins_with(#d, :today)",
                 ExpressionAttributeNames={"#d": "date"},
                 ExpressionAttributeValues={":today": today},
-                Limit=1  # We only need to know if ANY exist
+                Limit=1
             )
             return len(response.get('Items', [])) > 0
         except ClientError as e:
@@ -161,9 +200,9 @@ class PlayerStatsAndPropsCollector:
         """Update today's player props - one API call per game"""
         
         # Check if we already processed today's props
-        # if self.props_already_exist_for_today():
-        #     print("✅ Props already exist for today, skipping API calls")
-        #     return
+        if self.props_already_exist_for_today():
+            print("✅ Props already exist for today, skipping API calls")
+            return
         
         def fuzzy_match_player(player_name, popular_players, threshold=85):
             match, score, _ = process.extractOne(
