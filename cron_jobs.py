@@ -3,6 +3,7 @@ import sys
 from datetime import datetime, timezone, date
 from app.services import player_stats_and_props_collector as pspc
 from app.services.rolling_stats_calculator import RollingStatsCalculator
+from app.services.probability_calculator import ProbabilityCalculator
 
 def run_daily_jobs():
     """Execute all daily data collection and processing jobs"""
@@ -12,6 +13,7 @@ def run_daily_jobs():
         # Initialize services
         data_collector = pspc.PlayerStatsAndPropsCollector()
         calculator = RollingStatsCalculator()
+        prob_calculator = ProbabilityCalculator()
         
         # Check if NFL season is active
         week_info = data_collector.get_week_of_season()
@@ -35,6 +37,10 @@ def run_daily_jobs():
         # Update rolling stats (this should be efficient and not call external APIs)
         print("📈 Calculating rolling stats...")
         calculator.update_all_rolling_stats()
+        
+        # NEW: Cache probabilities for today's props
+        print("🔄 Caching probabilities for today's props...")
+        prob_calculator.cache_todays_probabilities()
         
         print("✅ All daily jobs completed successfully")
         return True

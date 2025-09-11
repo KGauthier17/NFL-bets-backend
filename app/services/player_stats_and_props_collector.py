@@ -294,7 +294,7 @@ class PlayerStatsAndPropsCollector:
 
     @staticmethod
     def get_week_of_season():
-        season_start = datetime.datetime(2025, 9, 3, 0, 0, 0, tzinfo=datetime.timezone.utc)
+        season_start = datetime.datetime(2025, 9, 4, 0, 0, 0, tzinfo=datetime.timezone.utc)
         now = datetime.datetime.now(datetime.timezone.utc)
         if now < season_start:
             return None

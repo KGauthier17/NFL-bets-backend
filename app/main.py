@@ -47,6 +47,17 @@ async def predict(api_key: str = Depends(verify_api_key)):
     """Generate probabilities for all players with props today"""
     try:
         prob_calculator = ProbabilityCalculator()
+        
+        # Try to get cached probabilities first
+        cached_probabilities = prob_calculator.get_cached_probabilities()
+        
+        if cached_probabilities:
+            return JSONResponse(
+                content={"Probabilities": cached_probabilities, "source": "cache"},
+                status_code=200
+            )
+        
+        # Fallback to real-time calculation if no cache available
         probabilities = prob_calculator.get_all_todays_probabilities()
         return JSONResponse(
             content={"Probabilities": probabilities},

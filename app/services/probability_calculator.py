@@ -6,6 +6,7 @@ from typing import Dict, Optional, List
 from botocore.exceptions import ClientError
 import datetime
 from rapidfuzz import process, fuzz
+import json
 
 class ProbabilityCalculator:
     def __init__(self, aws_region: str = 'us-west-2'):
@@ -67,7 +68,6 @@ class ProbabilityCalculator:
                         self.player_name_cache[player_name] = player_id
         
         except ClientError as e:
-            print(f"Error loading player name cache: {e}")
             self.player_name_cache = {}
         
         return self.player_name_cache
@@ -96,11 +96,9 @@ class ProbabilityCalculator:
             if score >= threshold:
                 return name_cache[match]
             else:
-                print(f"No good match found for '{player_name}' (best match: '{match}' with score {score})")
                 return None
                 
         except Exception as e:
-            print(f"Error in fuzzy matching for {player_name}: {e}")
             return None
     
     def get_player_rolling_stats(self, player_id: str) -> Optional[Dict]:
@@ -110,7 +108,6 @@ class ProbabilityCalculator:
             response = table.get_item(Key={'player_id': player_id})
             return response.get('Item')
         except ClientError as e:
-            print(f"Error fetching rolling stats for player {player_id}: {e}")
             return None
 
     def get_todays_player_props(self) -> List[Dict]:
@@ -135,11 +132,9 @@ class ProbabilityCalculator:
                     todays_props.append(item)
             
             if todays_props:
-                print(f"Found {len(todays_props)} props for today ({today})")
                 return todays_props
             
             # If no props for today, get the most recent props
-            print(f"No props found for today ({today}), looking for most recent props...")
             
             # Group items by date and find the most recent date
             props_by_date = {}
@@ -152,18 +147,15 @@ class ProbabilityCalculator:
                     props_by_date[date_key].append(item)
             
             if not props_by_date:
-                print("No props found in database")
                 return []
             
             # Find the most recent date
             most_recent_date = max(props_by_date.keys())
             most_recent_props = props_by_date[most_recent_date]
             
-            print(f"Using most recent props from {most_recent_date} ({len(most_recent_props)} props)")
             return most_recent_props
             
         except ClientError as e:
-            print(f"Error scanning player props: {e}")
             return []
 
     def calculate_normal_probability(self, mean: float, std: float, prop_line: float, over: bool = True) -> float:
@@ -372,10 +364,8 @@ class ProbabilityCalculator:
         probabilities = {}
         
         if not todays_props:
-            print("No props available in database")
             return probabilities
         
-        print(f"Processing {len(todays_props)} prop items")
         
         for prop_item in todays_props:
             player_name = prop_item.get('player_name', '')
@@ -387,10 +377,8 @@ class ProbabilityCalculator:
             # Find player ID using fuzzy matching
             player_id = self.find_player_id_by_name_fuzzy(player_name)
             if not player_id:
-                print(f"Could not find player ID for '{player_name}' after fuzzy matching")
                 continue
             
-            print(f"Found player ID {player_id} for '{player_name}'")
             player_probs = {}
             
             for market in markets:
@@ -407,7 +395,6 @@ class ProbabilityCalculator:
                     else:
                         # For first/last TD, we can use a similar approach but with lower probabilities
                         # For now, skip these as they require more complex modeling
-                        print(f"Skipping {market_key} - requires specialized modeling")
                         continue
                     
                     if 'error' not in prob_result:
@@ -423,7 +410,6 @@ class ProbabilityCalculator:
                 
                 # For over/under props, we need a point value
                 if point is None:
-                    print(f"Skipping {market_key} for {player_name} - no point value")
                     continue
                 
                 # Convert point to float if it's a Decimal
@@ -442,8 +428,6 @@ class ProbabilityCalculator:
                     # Regular single stats
                     stat_type = self.prop_to_stat_mapping.get(market_key)
                     if not stat_type:
-                        print(f"No mapping found for market key: {market_key}")
-                        continue
                         continue
                     
                     prob_result = self.calculate_prop_probabilities(player_id, stat_type, point)
@@ -548,3 +532,81 @@ class ProbabilityCalculator:
             'weighted_mean': round(total_td_mean, 2),
             'distribution_used': 'poisson_binary'
         }
+    
+    def convert_floats_to_decimal(self, obj):
+        """Recursively convert floats to Decimal for DynamoDB compatibility"""
+        if isinstance(obj, dict):
+            return {k: self.convert_floats_to_decimal(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self.convert_floats_to_decimal(item) for item in obj]
+        elif isinstance(obj, float):
+            return Decimal(str(obj))
+        else:
+            return obj
+        
+    def convert_decimal_to_float(self, obj):
+        """Recursively convert Decimal back to float for JSON serialization"""
+        if isinstance(obj, dict):
+            return {k: self.convert_decimal_to_float(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self.convert_decimal_to_float(item) for item in obj]
+        elif isinstance(obj, Decimal):
+            return float(obj)
+        else:
+            return obj
+
+    def cache_todays_probabilities(self):
+        """Calculate and cache probabilities for today's props"""
+        try:
+            print("🔍 Calculating probabilities...")
+            probabilities = self.get_all_todays_probabilities()
+            
+            if not probabilities:
+                print("ℹ️ No probabilities to cache")
+                return
+            
+            # Convert floats to Decimal for DynamoDB
+            probabilities_decimal = self.convert_floats_to_decimal(probabilities)
+            
+            # Store in cache table
+            cache_table = self.dynamodb.Table('nfl_cached_probabilities')
+            today = datetime.datetime.now().date().isoformat()
+            timestamp = datetime.datetime.now().isoformat()
+            
+            cache_item = {
+                'date': today,
+                'cached_at': timestamp,
+                'probabilities': probabilities_decimal,
+                'total_players': len(probabilities)
+            }
+            
+            cache_table.put_item(Item=cache_item)
+            print(f"✅ Cached probabilities for {len(probabilities)} players on {today}")
+            
+        except Exception as e:
+            print(f"❌ Error caching probabilities: {e}")
+
+    def get_cached_probabilities(self) -> Optional[Dict]:
+        """Get the most recent cached probabilities"""
+        try:
+            cache_table = self.dynamodb.Table('nfl_cached_probabilities')
+            
+            # Get most recent cache entry
+            response = cache_table.scan()
+            items = response.get('Items', [])
+            
+            if not items:
+                return None
+
+            # Sort by cached_at and get most recent
+            sorted_items = sorted(items, key=lambda x: x.get('cached_at', ''), reverse=True)
+            most_recent = sorted_items[0]
+            
+            probabilities = most_recent.get('probabilities', {})
+            
+            # Convert Decimal back to float for JSON serialization
+            return self.convert_decimal_to_float(probabilities)
+            
+        except ClientError as e:
+            print(f"❌ Error retrieving cached probabilities: {e}")
+            return None
